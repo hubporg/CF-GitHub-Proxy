@@ -88,9 +88,7 @@ async function fetchHandler(e) {
     path = urlObj.href.substr(urlObj.origin.length + PREFIX.length).replace(/^https?:\/+/, 'https://')
     if (path.search(exp7) === 0) {
         return httpHandler(req, path)
-    } else if (path.search(exp8) === 0) {
-        return httpHandler(req, path)
-    } else if (path.search(exp1) === 0 || path.search(exp5) === 0 || path.search(exp6) === 0 || path.search(exp3) === 0 || path.search(exp4) === 0) {
+    } else if (path.search(exp8) === 0 || path.search(exp1) === 0 || path.search(exp5) === 0 || path.search(exp6) === 0 || path.search(exp3) === 0) {
         return httpHandler(req, path)
     } else if (path.search(exp2) === 0) {
         if (Config.jsdelivr) {
