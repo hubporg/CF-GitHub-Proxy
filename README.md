@@ -61,7 +61,7 @@ Snippets 与 Workers 不是同一个运行环境，限额严格（详见 [Cloudf
 | 内存 | 2 MB |
 | 代码体积 | 32 KB |
 
-**subrequest 是本项目最需要关注的一项。**官方规定「重定向链中的每一跳都计入 subrequest」，
+**subrequest 是本项目最需要关注的一项**。官方规定「重定向链中的每一跳都计入 subrequest」，
 因此 `https://<域名>/https://github.com/<owner>/<repo>/releases/download/...` 这类请求会依次访问
 `github.com` → `release-assets.githubusercontent.com`，**消耗 2 个 subrequest**：
 
