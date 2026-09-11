@@ -4,7 +4,14 @@ const ASSET_URL = 'https://geekertao.github.io/gh-proxy/'
 const PREFIX = '/'
 
 const Config = {
-    jsdelivr: 0
+    jsdelivr: 0,
+    // 是否把「签名资源跳转」重写为 302 返回给客户端。
+    //   0 = 内部自动跟随 302，直接流式返回文件内容（默认；客户端只发 1 次请求）
+    //   1 = 返回 302 让客户端再请求一次代理（仅作为 Snippets 触发 1202 时的应急开关）
+    //
+    // 默认 0 与 workers.js 行为一致：GitHub 域名链接由代理内部跟随到真实文件后透传内容，
+    // 客户端不会看到真实文件链接，也不会多一次往返。
+    rewriteAssetRedirect: 0
 }
 
 const whiteList = []
@@ -25,6 +32,13 @@ const exp4 = /^(?:https?:\/\/)?raw\.(?:githubusercontent|github)\.com\/.+?\/.+?\
 const exp5 = /^(?:https?:\/\/)?gist\.(?:githubusercontent|github)\.com\/.+?\/.+?\/.+$/i
 const exp6 = /^(?:https?:\/\/)?github\.com\/.+?\/.+?\/tags.*$/i
 const exp7 = /^(?:https?:\/\/)?api\.github\.com\/.*$/i
+// —— GitHub 资源 CDN（签名直链 / 归档分流）——
+const exp8 = /^(?:https?:\/\/)?(?:release-assets|objects|github-releases)\.githubusercontent\.com\/.*$/i
+const exp9 = /^(?:https?:\/\/)?codeload\.github\.com\/.*$/i
+const exp10 = /^(?:https?:\/\/)?media\.githubusercontent\.com\/.*$/i
+
+const ENTRY_EXPS = [exp1, exp2, exp3, exp4, exp5, exp6, exp7]
+const ASSET_EXPS = [exp8, exp9, exp10]
 
 function makeRes(body, status = 200, headers = {}) {
     headers['access-control-allow-origin'] = '*'
@@ -40,7 +54,14 @@ function newUrl(urlStr) {
 }
 
 function checkUrl(u) {
-    for (let i of [exp1, exp2, exp3, exp4, exp5, exp6, exp7]) {
+    for (let i of [...ENTRY_EXPS, ...ASSET_EXPS]) {
+        if (u.search(i) === 0) return true
+    }
+    return false
+}
+
+function isEntryUrl(u) {
+    for (let i of ENTRY_EXPS) {
         if (u.search(i) === 0) return true
     }
     return false
@@ -78,7 +99,10 @@ async function fetchHandler(req) {
         path.search(exp5) === 0 ||
         path.search(exp6) === 0 ||
         path.search(exp3) === 0 ||
-        path.search(exp4) === 0
+        path.search(exp4) === 0 ||
+        path.search(exp8) === 0 ||
+        path.search(exp9) === 0 ||
+        path.search(exp10) === 0
     ) {
         return httpHandler(req, path)
     } else if (path.search(exp2) === 0) {
@@ -151,7 +175,8 @@ async function proxy(urlObj, reqInit) {
     if (resHdrNew.has('location')) {
         let loc = resHdrNew.get('location')
 
-        if (checkUrl(loc)) {
+        // 入口链接仍按旧逻辑重写；签名 CDN 跳转默认内部跟随（避免多一次往返/签名暴露）
+        if (isEntryUrl(loc) || (Config.rewriteAssetRedirect && checkUrl(loc))) {
             resHdrNew.set('location', PREFIX + loc)
         } else {
             reqInit.redirect = 'follow'

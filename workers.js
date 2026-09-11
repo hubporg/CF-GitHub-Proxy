@@ -8,7 +8,11 @@ const ASSET_URL = 'https://geekertao.github.io/gh-proxy/'
 const PREFIX = '/'
 // 分支文件使用jsDelivr镜像的开关，0为关闭，默认关闭
 const Config = {
-    jsdelivr: 0
+    jsdelivr: 0,
+    // 是否把 GitHub 签名资源跳转（release-assets / objects 等）重写为代理链接返回给客户端。
+    // 0（默认）：Worker 内部跟随跳转并直接流式返回，1 次往返，与旧版行为一致。
+    // 1：返回 302 让客户端再请求一次代理，URL 保持可见（便于浏览器扩展统一接管）。
+    rewriteAssetRedirect: 0
 }
 
 const whiteList = [] // 白名单，路径里面有包含字符的才会通过，e.g. ['/username/']
@@ -31,6 +35,20 @@ const exp4 = /^(?:https?:\/\/)?raw\.(?:githubusercontent|github)\.com\/.+?\/.+?\
 const exp5 = /^(?:https?:\/\/)?gist\.(?:githubusercontent|github)\.com\/.+?\/.+?\/.+$/i
 const exp6 = /^(?:https?:\/\/)?github\.com\/.+?\/.+?\/tags.*$/i
 const exp7 = /^(?:https?:\/\/)?api\.github\.com\/.*$/i
+// —— GitHub 资源 CDN（签名直链 / 归档分流）——
+// release-assets：新版 release 资产（302 目标，带 sig/jwt 签名）
+// objects：旧版资产 CDN 主机名
+// github-releases：更早的资产主机名
+// codeload：源码归档（archive/tar.gz/zip）分流主机
+// media：Git LFS 媒体文件
+const exp8 = /^(?:https?:\/\/)?(?:release-assets|objects|github-releases)\.githubusercontent\.com\/.*$/i
+const exp9 = /^(?:https?:\/\/)?codeload\.github\.com\/.*$/i
+const exp10 = /^(?:https?:\/\/)?media\.githubusercontent\.com\/.*$/i
+
+// 可作为「入口」由用户直接粘贴的链接
+const ENTRY_EXPS = [exp1, exp2, exp3, exp4, exp5, exp6, exp7]
+// 仅作为「跳转目标 / 直链」的 CDN 链接
+const ASSET_EXPS = [exp8, exp9, exp10]
 
 /**
  * @param {any} body
@@ -63,7 +81,17 @@ addEventListener('fetch', e => {
 
 
 function checkUrl(u) {
-    for (let i of [exp1, exp2, exp3, exp4, exp5, exp6, exp7]) {
+    for (let i of [...ENTRY_EXPS, ...ASSET_EXPS]) {
+        if (u.search(i) === 0) {
+            return true
+        }
+    }
+    return false
+}
+
+// 只判断「入口」类链接（用于决定 302 是否重写为代理地址）
+function isEntryUrl(u) {
+    for (let i of ENTRY_EXPS) {
         if (u.search(i) === 0) {
             return true
         }
@@ -86,7 +114,8 @@ async function fetchHandler(e) {
     path = urlObj.href.substr(urlObj.origin.length + PREFIX.length).replace(/^https?:\/+/, 'https://')
     if (path.search(exp7) === 0) {
         return httpHandler(req, path)
-    } else if (path.search(exp1) === 0 || path.search(exp5) === 0 || path.search(exp6) === 0 || path.search(exp3) === 0 || path.search(exp4) === 0) {
+    } else if (path.search(exp1) === 0 || path.search(exp5) === 0 || path.search(exp6) === 0 || path.search(exp3) === 0 || path.search(exp4) === 0
+        || path.search(exp8) === 0 || path.search(exp9) === 0 || path.search(exp10) === 0) {
         return httpHandler(req, path)
     } else if (path.search(exp2) === 0) {
         if (Config.jsdelivr) {
@@ -162,7 +191,9 @@ async function proxy(urlObj, reqInit) {
 
     if (resHdrNew.has('location')) {
         let _location = resHdrNew.get('location')
-        if (checkUrl(_location))
+        // 入口链接（github.com / api.github.com 等）仍按旧逻辑重写为代理地址；
+        // 签名 CDN 跳转默认在 Worker 内部跟随，避免多一次往返、也避免签名暴露在地址栏。
+        if (isEntryUrl(_location) || (Config.rewriteAssetRedirect && checkUrl(_location)))
             resHdrNew.set('location', PREFIX + _location)
         else {
             reqInit.redirect = 'follow'
