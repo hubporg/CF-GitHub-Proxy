@@ -34,6 +34,13 @@ github release、archive以及项目文件的加速项目，支持clone，github
 - gist：https://gist.githubusercontent.com/cielpy/351557e6e465c12986419ac5a4dd2568/raw/cmd.py
 
 - api：https://api.github.com/repos/Geekertao/CF-Workers-GitHub-Proxy
+
+- release 资产直链（GitHub 签名地址）：https://release-assets.githubusercontent.com/github-production-release-asset/xxxxx/xxxxx?sp=r&sig=xxx
+
+- 源码归档分流地址：https://codeload.github.com/hunshcn/project/tar.gz/refs/tags/v0.1.0
+
+- Git LFS 媒体文件：https://media.githubusercontent.com/media/hunshcn/project/master/filename
+
 ## Workers 部署方法
 ### 部署 Cloudflare Worker：
 
@@ -41,6 +48,33 @@ github release、archive以及项目文件的加速项目，支持clone，github
    - 将 [workers.js](./workers.js)  的内容粘贴到 Worker 编辑器中。
 
 ## Snippets 部署方法
+
+### ⚠️ Snippets 限制须知（部署前务必阅读）
+
+Snippets 与 Workers 不是同一个运行环境，限额严格（详见 [Cloudflare 官方文档](https://developers.cloudflare.com/rules/snippets/)）：
+
+| 项目 | 限制 |
+| --- | --- |
+| 可用套餐 | Free ❌ 不可用；Pro / Business / Enterprise ✅ |
+| **subrequest 上限** | **Pro 2 / Business 3 / Enterprise 5** |
+| 单次执行 CPU | 5 ms |
+| 内存 | 2 MB |
+| 代码体积 | 32 KB |
+
+**subrequest 是本项目最需要关注的一项**。官方规定「重定向链中的每一跳都计入 subrequest」，
+因此 `https://<域名>/https://github.com/<owner>/<repo>/releases/download/...` 这类请求会依次访问
+`github.com` → `release-assets.githubusercontent.com`，**消耗 2 个 subrequest**：
+
+- **Pro 套餐（上限 2）**：可用，但没有余量。若 GitHub 未来增加一跳重定向，就会触发
+  `1202 Snippets exceeded subrequests limit`。
+- **Business / Enterprise（3 / 5）**：有余量，无风险。
+
+**应急方案**：若线上出现 `1202`，把 `snippets.js` 顶部的 `Config.rewriteAssetRedirect` 改为 `1`。
+此时遇到签名跳转会返回 302，由客户端再请求一次代理，使单次请求只消耗 1 个 subrequest
+（代价：客户端多一次往返，且真实文件链接会出现在地址栏）。
+
+> 高并发或大流量场景，建议优先使用 Workers 版本部署。
+
 ### 部署 Snippets：
 
    - 需要检查是否开通了 Snippets 功能，订阅pro以上计划或灰度测试到才可以使用，使用以下代码在F12开发者控制台输入查看哪些已经开通了Snippets功能：
